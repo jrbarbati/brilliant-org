@@ -44,16 +44,6 @@ class NGram:
         return ' '.join(self.tuple())
 
 
-class Bigram(NGram):
-    def __init__(self, words: List[str] | None = None):
-        super().__init__(2, words)
-
-
-class Trigram(NGram):
-    def __init__(self, words: List[str] | None = None):
-        super().__init__(3, words)
-
-
 class TextGenerator:
     def __init__(self, text_analysis: Dict[str, Any], seed: int | None = None) -> None:
         self.text_analysis = text_analysis
