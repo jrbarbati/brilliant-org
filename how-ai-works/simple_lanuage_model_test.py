@@ -62,47 +62,50 @@ class TestSimpleLanguageModel(TestCase):
         words = expected_words()
         pairs = list(zip(words, words[1:]))
 
-        # Shape: context NGram -> {following word -> count}
+        # Shape: context tuple -> ordered list of following words (repeats kept)
         self.assertIsInstance(result, dict)
 
-        for word, following in result.items():
-            self.assertIsInstance(word, NGram)
-            self.assertIsInstance(following, dict)
+        for context, following in result.items():
+            self.assertIsInstance(context, tuple)
+            self.assertEqual(1, len(context))
+            self.assertIsInstance(following, list)
             self.assertGreater(len(following), 0)
-            for successor, count in following.items():
+            for successor in following:
                 self.assertIsInstance(successor, str)
-                self.assertIsInstance(count, int)
-                self.assertGreater(count, 0)
 
         # Every word that is followed by something is a key; the final word is not (it appears once, at the end)
-        self.assertEqual({ctx(w) for w in words[:-1]}, set(result))
-        self.assertNotIn(ctx('own'), result)
+        self.assertEqual({(w,) for w in words[:-1]}, set(result))
+        self.assertNotIn(('own',), result)
 
         # Each adjacent pair in the text is recorded exactly as many times as it occurs
         for prev, curr in pairs:
-            self.assertIn(curr, result[ctx(prev)])
-            self.assertEqual(pairs.count((prev, curr)), result[ctx(prev)][curr])
+            self.assertEqual(pairs.count((prev, curr)), result[(prev,)].count(curr))
 
         # Nothing is recorded that never occurred as an adjacent pair
-        recorded = {(str(prev), curr) for prev, following in result.items() for curr in following}
+        recorded = {(context[0], curr) for context, following in result.items() for curr in following}
         self.assertEqual(set(pairs), recorded)
 
-        # One transition per adjacent pair, so the counts total W - 1
-        self.assertEqual(len(words) - 1, sum(sum(f.values()) for f in result.values()))
+        # One transition per adjacent pair, so the list lengths total W - 1
+        self.assertEqual(len(words) - 1, sum(len(f) for f in result.values()))
 
-        # A word's successor counts total the number of times it was followed by anything
-        for word, following in result.items():
-            self.assertEqual(words[:-1].count(str(word)), sum(following.values()))
+        # A word's successor list is as long as the number of times it was followed by anything
+        for context, following in result.items():
+            self.assertEqual(words[:-1].count(context[0]), len(following))
+
+        # Successors are stored in text order
+        for context, following in result.items():
+            self.assertEqual([curr for prev, curr in pairs if prev == context[0]], following)
 
         # Spot checks against the known text
-        self.assertEqual({'build': 1, 'generate': 1, 'follow': 1, 'write': 1}, result[ctx('to')])
-        self.assertEqual({'make': 1, 'count': 1, 'then': 1}, result[ctx('will')])
-        self.assertEqual({'language': 1, 'model': 1, 'text': 1}, result[ctx('the')])
-        self.assertEqual({'a': 1}, result[ctx('is')])
-        self.assertEqual({'analysis': 1, 'model': 1}, result[ctx('language')])
+        self.assertEqual(['build', 'generate', 'follow', 'write'], result[('to',)])
+        self.assertEqual(['make', 'count', 'then'], result[('will',)])
+        self.assertEqual(['language', 'model', 'text'], result[('the',)])
+        self.assertEqual(['a'], result[('is',)])
+        self.assertEqual(['analysis', 'model'], result[('language',)])
 
         # Repeated transitions accumulate: "it should" appears twice, "it will" once
-        self.assertEqual({'should': 2, 'will': 1}, result[ctx('it')])
+        self.assertEqual(['should', 'will', 'should'], result[('it',)])
+        self.assertEqual(Counter({'should': 2, 'will': 1}), Counter(result[('it',)]))
 
     def test__generate_successors_3_dimensions(self):
         file = 'test_file.txt'
@@ -116,25 +119,26 @@ class TestSimpleLanguageModel(TestCase):
         triples = list(zip(words, words[1:], words[2:]))
 
         # Keys are two-word contexts; every adjacent pair except the final one is followed by something
-        self.assertEqual({ctx(a, b) for a, b, _ in triples}, set(result))
-        self.assertNotIn(ctx('its', 'own'), result)
+        self.assertEqual({(a, b) for a, b, _ in triples}, set(result))
+        self.assertNotIn(('its', 'own'), result)
+        for context in result:
+            self.assertEqual(2, len(context))
 
         # Each triple in the text is recorded exactly as many times as it occurs
         for a, b, c in triples:
-            self.assertIn(c, result[ctx(a, b)])
-            self.assertEqual(triples.count((a, b, c)), result[ctx(a, b)][c])
+            self.assertEqual(triples.count((a, b, c)), result[(a, b)].count(c))
 
-        # One transition per triple, so the counts total W - 2
-        self.assertEqual(len(words) - 2, sum(sum(f.values()) for f in result.values()))
+        # One transition per triple, so the list lengths total W - 2
+        self.assertEqual(len(words) - 2, sum(len(f) for f in result.values()))
 
         # Spot checks: a two-word context disambiguates what a single word cannot
-        self.assertEqual({'will': 1}, result[ctx('the', 'model')])
-        self.assertEqual({'analysis': 1}, result[ctx('the', 'language')])
-        self.assertEqual({'that': 1}, result[ctx('language', 'model')])
-        self.assertEqual({'own': 1}, result[ctx('on', 'its')])
+        self.assertEqual(['will'], result[('the', 'model')])
+        self.assertEqual(['analysis'], result[('the', 'language')])
+        self.assertEqual(['that'], result[('language', 'model')])
+        self.assertEqual(['own'], result[('on', 'its')])
 
-        # The only repeated context: "it should" is followed by "i'm" (across a line break) and "be"
-        self.assertEqual({"i'm": 1, 'be': 1}, result[ctx('it', 'should')])
+        # The only repeated context: "it should" is followed by "i'm" (across a line break) and "be", in that order
+        self.assertEqual(["i'm", 'be'], result[('it', 'should')])
 
     def _assert_valid_ngrams(self, result, n: int) -> None:
         """Checks that {result} is the complete, ordered set of n-grams for the test text."""
@@ -174,11 +178,6 @@ TEST_LINES = [
     '',
     'Using those patterns, it should be able to write a few new sentences on its own.'
 ]
-
-
-def ctx(*words: str) -> NGram:
-    """Builds the context NGram (n = len(words) + 1) used as a successors key."""
-    return NGram(len(words) + 1, list(words))
 
 
 def expected_words() -> List[str]:

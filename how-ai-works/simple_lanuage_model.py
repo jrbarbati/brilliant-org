@@ -122,7 +122,7 @@ def _generate_ngrams(filename: str, dimensions: int | None = None) -> List[NGram
     return ngrams
 
 
-def _generate_successors(ngrams: List[NGram]) -> Dict[NGram, Dict[str, int]]:
+def _generate_successors(ngrams: List[NGram]) -> Dict[Tuple[str], Dict[str, int]]:
     successors = dict()
 
     for ngram in ngrams:
