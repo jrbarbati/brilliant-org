@@ -2,7 +2,7 @@ import random
 from typing import List, Dict, Tuple
 
 
-# TODO: Refactor this file to use Point
+# TODO: Refactor this file to use Point instead of List everywhere
 class Point:
     def __init__(self, values: List) -> None:
         self.values = values
